@@ -1,0 +1,79 @@
+---
+title: "data_sim.rmd"
+output: html_document
+date: "2023-09-15"
+---
+
+```{r load-core}
+if (!requireNamespace("tictoc", quietly = TRUE)) {
+  stop("Package 'tictoc' is required but not installed.")
+}
+devtools::source_url("https://raw.githubusercontent.com/ej91016/SSM/main/R/ssm.R")
+```
+
+```{r}
+#a template for executing distcal
+tictoc::tic('total')
+
+homedir=file.path(getwd(),'test') #adjust as needed
+if (!dir.exists(homedir)) {
+  dir.create(homedir, recursive = TRUE)
+}
+resultframe=getresult(parsimony=T)
+detailframe=getresult(parsimony=T)
+tnum=10
+snum=10
+rth=2
+parallel=2
+
+for (i in 1:10){ #loop through different values of a parameter
+      mydata=distcal(state_num=c(2),char_num=c(1000),rate=0.1*i,
+                     ntip=16,birth=1,death=0,tree_num=tnum,set_num=snum,
+                     mainDir=homedir,rthreads=rth,par=parallel,parsimony = T,falsespace=7)
+    update=distcal_summary(dm=mydata$distance,index=i,filename=mydata$fname,result=resultframe,detail=detailframe)
+    resultframe=update$result
+    detailframe=update$detail
+    print(paste0("i=",i,' is completed'))
+}
+
+mysetup='testresults16_2f10_r_10x10_wp.csv' #desired output name
+
+write.csv(resultframe,file.path(homedir,mysetup))
+write.csv(detailframe,file.path(homedir,paste0('detail_',mysetup)))
+print(paste0(mysetup,' is done.'))
+tictoc::toc()
+
+```
+
+```{r,fig.width=6}
+#this summarize result files
+#if interrupted
+mypath="directory_that_contain_the_set_of_run"
+mysummary= run_summary(parsimony=TRUE,path=mypath)
+write.csv(mysummary$result,paste0(mypath,'testresults_temp.csv'))
+write.csv(mysummary$detail,paste0(mypath,'detail_testresults_temp.csv'))
+```
+
+
+```{r,fig.width=12,fig.height=12}
+#with parsimony
+plot(x=resultframe$i,y=resultframe$CID_p,main='mysetup',col='deepskyblue',pch=19,
+     ylim=c(0.9*as.numeric(min(resultframe$CID,resultframe$CID_p,resultframe$CIP_pp)),
+              1.1*as.numeric(max(resultframe$CID,resultframe$CID_p,resultframe$CID_pp))),cex=2)
+points(x=resultframe$i,y=resultframe$CID,col='#FF69B4',pch='+',cex=1.5)
+points(x=resultframe$i,y=resultframe$CID_pp,col='#009E73',pch=17,cex=1.5)
+
+```
+
+```{r}
+#with parsimony_detail
+plot(x=detailframe$i,y=detailframe$CID_p,main='mysetup',col='#00BFFF20',pch=19,
+     ylim=c(0.9*as.numeric(min(detailframe$CID,detailframe$CID_p),detailframe$CID_pp),
+              1.1*as.numeric(max(detailframe$CID,detailframe$CID_p,detailframe$CID_pp))),cex=2)
+points(x=detailframe$i,y=detailframe$CID,col='#FF69B420',pch='+',cex=1.5)
+points(x=detailframe$i,y=detailframe$CID_pp,col='#009E7320',pch=17,cex=1.5)
+points(x=resultframe$i,y=resultframe$CID_p,col='deepskyblue',pch=19,cex=2)
+points(x=resultframe$i,y=resultframe$CID,col='#FF69B4',pch='+',cex=1.5)
+points(x=resultframe$i,y=resultframe$CID_pp,col='#009E73',pch=17,cex=1.5)
+
+```

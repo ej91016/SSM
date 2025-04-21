@@ -1,0 +1,309 @@
+---
+title: "plot_ssm"
+output: html_document
+date: "2023-09-13"
+---
+```{r}
+required_packages <- c("knitr", "kableExtra", "dplyr", "EnvStats")
+for (pkg in required_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    stop("Package '", pkg, "' is required but not installed.")
+  }
+}
+```
+
+
+```{r,echo=FALSE}
+plot_ssmr=function(myresult,distance='CID',mytitle='',myrange=c(0,0),
+                   parsimony=FALSE){
+  if (myrange[[2]]==0){
+    myrange=c(0.95*as.numeric(min(myresult[[distance]],
+                                  myresult[[paste0(distance,'_p')]],
+                                  myresult[[paste0(distance,'_pp')]])),
+              1.05*as.numeric(max(myresult[[distance]],
+                                  myresult[[paste0(distance,'_p')]],
+                                  myresult[[paste0(distance,'_pp')]])))
+  }
+  plot(x=myresult$i,y=,myresult[[paste0(distance,'_p')]],
+       col='deepskyblue',pch=19, main=mytitle,xlab='', ylab = distance,
+       ylim=myrange,cex=2)
+  if (parsimony==TRUE){ #insert here so + in front of triangle
+    points(x=myresult$i,y=myresult[[paste0(distance,'_pp')]],col='#009E73',pch=17,cex=1.5)    
+  }
+  points(x=myresult$i,y=myresult[[distance]],col='#FF69B4',pch='+',cex=1.5)
+
+
+}
+
+plot_ssmd=function(mydetail,myresult,distance='CID',mytitle='',myrange=c(0,0),
+                   parsimony=FALSE){
+  if (myrange[[2]]==0){
+    if(parsimony){
+          myrange=c(0.95*as.numeric(min(mydetail[[distance]],
+                                  mydetail[[paste0(distance,'_p')]],
+                                  mydetail[[paste0(distance,'_pp')]])),
+              1.05*as.numeric(max(mydetail[[distance]],
+                                  mydetail[[paste0(distance,'_p')]],
+                                  mydetail[[paste0(distance,'_pp')]])))
+    }else{
+          myrange=c(0.95*as.numeric(min(mydetail[[distance]],
+                                  mydetail[[paste0(distance,'_p')]])),
+              1.05*as.numeric(max(mydetail[[distance]],
+                                  mydetail[[paste0(distance,'_p')]])))
+    }
+  }
+  plot(x=mydetail$i,y=mydetail[[paste0(distance,'_p')]],
+       col='#00BFFF20',pch=19, main=mytitle, xlab='', ylab = distance,
+       ylim=myrange,cex=2)
+  points(x=mydetail$i,y=mydetail[[distance]],
+         col='#FF69B420',pch='+',cex=1.5)
+
+  points(x=myresult$i,y=myresult[[paste0(distance,'_p')]],
+         col='#4169E1',pch=19,cex=2)
+  if (parsimony==TRUE){
+    points(x=mydetail$i,y=mydetail[[paste0(distance,'_pp')]],
+           col='#009E7320',pch=17,cex=1.5)
+    points(x=myresult$i,y=myresult[[paste0(distance,'_pp')]],
+           col='#009E73',pch=17,cex=1.5)      
+  }
+  points(x=myresult$i,y=myresult[[distance]],
+         col='#FF0000',pch='+',cex=1.5)
+
+
+}
+minmax=function(mydata,distance='CID',parsimony=FALSE){
+  if(parsimony==TRUE){
+    
+  }else{
+    return(c(0.95*as.numeric(min(mydata[[distance]],
+                                mydata[[paste0(distance,'_p')]])),
+             1.05*as.numeric(max(mydata[[distance]],
+                                mydata[[paste0(distance,'_p')]]))))    
+  }
+
+}
+```
+
+```{r,fig.height=2.5,fig.width=9}
+#fig for pub
+orderdetail=c("control/detail_testresults16_2_500_5_500_0.5_50x30.csv",
+"space_size/detail_testresults16_2_500_n_500_0.5_50x30.csv",
+"tree_size/detail_testresults8n_2_500_7_500_0.5_50x30.csv",
+"matrix_size/detail_testresults16_2_50x_7_50x_0.5_50x30.csv",
+"r_and_p/detail_testresults16_2_100_7_900_n_50x30.csv",
+"r_and_p/detail_testresults16_2_500_7_500_n_50x30.csv",
+"r_and_p/detail_testresults16_2_900_7_100_n_50x30.csv",
+"100/detail_testresults16_2_900_7_100_100x100.csv",
+"r_and_p/detail_testresults16_3_900_7_100_r_50x30.csv",
+"proportion/detail_testresults16_2_x_7_y_0.5_50x30.csv",
+"false_space/detail_testresults16_2_1000_f7_r_50x30.csv",
+"false_space/detail_testresults16_3_1000_f7_r_50x30.csv",
+"false_space/detail_testresults16_3_1000_f8_r_50x30.csv")
+
+par(mfrow = c(1,2),cex=1, mai=c(0.5,0.9,0.1,0.1))
+for (detail in orderdetail){
+  detailframe=read.csv(detail)
+  resultframe=read.csv(gsub('detail_',"",detail))
+  datarange=minmax(resultframe)
+  plot_ssmr(myresult=resultframe,'CID',myrange=datarange)    
+  plot_ssmd(mydetail=detailframe,myresult=resultframe,'CID',myrange=c(0,1))
+}
+
+```
+
+```{r,fig.height=52,fig.width=18}
+#draw result figures
+# below line for black background
+# par(col='white',bg='black',fg='white',col.lab='white',col.axis='white',col.main='white')
+par(mfrow = c(13,3),cex=1)
+for (detail in orderdetail){
+  resultframe=read.csv(gsub('detail_',"",detail))
+  shortresult=gsub('testresults|_50x30.csv',"",result)
+  for (op in optionList){
+    plot_ssmr(resultframe,op)    
+    
+  }
+}
+
+
+par(mfrow = c(13,3),cex=1)
+for (detail in orderdetail){
+  detailframe=read.csv(detail)
+  resultframe=read.csv(gsub('detail_',"",detail))
+  shortdetail=gsub('testresults|_50x30.csv',"",detail)
+  for (op in optionList){
+    plot_ssmd(detailframe,resultframe,op)    
+  }
+}
+```
+
+
+
+```{r,eval=FALSE}
+#plot as files
+for (result in resultList){
+  resultframe=read.csv(result)
+  shortresult=gsub('testresults|50x30.csv',"",result)
+  for (op in optionList){
+    svg(paste0('figures/',basename(shortresult),'_',op,'.svg'),
+        height=4, width=6)
+    plot_ssmr(resultframe,op)
+    dev.off()
+  }
+}
+
+for (detail in detailList){
+  detailframe=read.csv(detail)
+  resultframe=read.csv(gsub('detail_',"",detail))
+  shortdetail=gsub('testresults|50x30.csv',"",detail)
+  for (op in optionList){
+    svg(paste0('figures/detail_',basename(shortresult),'_',op,'.svg'),
+        height=4, width=6)
+    plot_ssmd(detailframe,op)
+    dev.off()
+  }
+}
+```
+
+
+
+```{r}
+source('physim.R')
+start='directory_that_contain_the_set_of_run'
+mysub=list.dirs(start,full.names=TRUE,recursive=FALSE)
+rawcomp=processx::run("fd",args= c("^comp",mysub[1]),echo=FALSE,error_on_status = FALSE)$stdout
+compfile_exp=unlist(strsplit(rawcomp,"\n"))
+size=length(compfile_exp)
+
+
+mymatrix=matrix(NA,nrow=length(mysub),ncol=size)
+mymatrix2=matrix(NA,nrow=length(mysub),ncol=size)
+mymatrix3=matrix(NA,nrow=length(mysub),ncol=size)
+mymatrix4=matrix(NA,nrow=length(mysub),ncol=size)
+mymatrix5=matrix(NA,nrow=length(mysub),ncol=size)
+mymatrix6=matrix(NA,nrow=length(mysub),ncol=size)
+mymatrix7=matrix(NA,nrow=length(mysub),ncol=size)
+mymatrix8=matrix(NA,nrow=length(mysub),ncol=size)
+
+for (i in 1:length(mysub)){
+  print(paste0('working on ',mysub[i]))
+  rawcomp=processx::run("fd",args= c("^comp",mysub[i]),echo=FALSE,error_on_status = FALSE)$stdout
+  compfiles=unlist(strsplit(rawcomp,"\n"))
+  compfiles_info=file.info(compfiles)
+  if (any(is.na(compfiles_info$ctime))){
+    warning("Some files do not have creation time available.")
+  }
+  compfiles=compfiles[order(compfiles_info$ctime)]
+  
+  rawpart=processx::run("fd",args= c("^part_comp",mysub[i]),echo=FALSE,error_on_status = FALSE)$stdout
+  partfiles=unlist(strsplit(rawpart,"\n"))
+  partfiles_info=file.info(partfiles)
+  if (any(is.na(partfiles_info$ctime))){
+    warning("Some files do not have creation time available.")
+  }
+  partfiles=partfiles[order(partfiles_info$ctime)]
+  
+  rawpaup=processx::run("fd",args= c("^paup_comp",mysub[i]),echo=FALSE,error_on_status = FALSE)$stdout
+  paupfiles=unlist(strsplit(rawpaup,"\n"))
+  paupfiles_info=file.info(paupfiles)
+  if (any(is.na(paupfiles_info$ctime))){
+    warning("Some files do not have creation time available.")
+  }
+  paupfiles=paupfiles[order(paupfiles_info$ctime)]  
+  print('finish cataloging tree files')
+  for (j in 1:length(compfiles)){
+    print(j)
+    bdist_set=compare_file(compfiles[j],partfiles[j],options='wRFD')
+    pdist_set=compare_file(compfiles[j],partfiles[j])
+    ppdist_set=compare_file(compfiles[j],paupfiles[j])
+    pppdist_set=compare_file(partfiles[j],paupfiles[j])
+    mymatrix[i,j]=mean(bdist_set[[1]]) #ssm wRFD
+    mymatrix2[i,j]=mean(bdist_set[[2]]) #ssa wRFD
+    mymatrix3[i,j]=mean(pdist_set[[1]]) #ssm
+    mymatrix4[i,j]=mean(pdist_set[[2]]) #ssa
+    mymatrix5[i,j]=mean(pdist_set[[3]]) #mva
+    mymatrix6[i,j]=mean(ppdist_set[[2]]) #pp
+    mymatrix7[i,j]=mean(ppdist_set[[3]]) #mvpp
+    mymatrix8[i,j]=mean(pppdist_set[[3]]) #avpp
+  }
+}
+#rfd
+```
+
+```{r,echo=FALSE}
+#plot from detailfile
+detail='detail_testresults_temp.csv'
+source('physim.R')
+pdf(file="E:/EJ/statespace/parsimony/32f10/32f10.pdf",height=12,width=18)
+par(mfrow = c(1,2),cex=1, mai=c(0.9,0.9,0.1,0.1))
+detailframe=read.csv(detail)
+resultframe=read.csv(gsub('detail_',"",detail))
+datarange=minmax(resultframe,distance='CID')
+plot_ssmr(myresult=resultframe,'CID',myrange=datarange,parsimony=TRUE)    
+plot_ssmd(mydetail=detailframe,myresult=resultframe,'CID',myrange=c(0,2),parsimony=T)
+
+```
+
+```{r}
+#plot comparison with wRFD
+pdf(file="wRFD.pdf",height=12,width=18)
+par(mfrow = c(1,2),cex=1, mai=c(1,1,0.1,0.1))
+plot(rowMeans(mymatrix4),ylim=c(0,1),col='deepskyblue',pch=19,cex=2,xlab = 'rate',ylab='CID') #ssm
+points(rowMeans(mymatrix3),col='#FF69B4',pch='+',cex=1.5) 
+
+plot(rowMeans(mymatrix2),ylim=c(0,30),col='deepskyblue',pch=19,cex=2,xlab = 'rate',ylab='wRFD') #ssm
+points(rowMeans(mymatrix),col='#FF69B4',pch='+',cex=1.5) #ssa
+```
+
+```{r}
+pdf(file="result.pdf",height=12,width=18)
+par(mfrow = c(1,1),cex=1, mai=c(1,0.9,0.1,0.1))
+plot(rowMeans(mymatrix4),ylim=c(0,1),col='deepskyblue',pch=19,cex=2,ylab = 'CID',xlab='rate')
+points(rowMeans(mymatrix3),col='#FF69B4',pch='+',cex=2)
+points(rowMeans(mymatrix6),col='#009E73',pch=17,cex=2)
+points(rowMeans(mymatrix5),col='purple',pch=18,cex=2)
+points(rowMeans(mymatrix7),col='orange',pch='*',cex=2)
+points(rowMeans(mymatrix8),col='#00F4F4',pch=15,cex=1)
+dev.off()
+```
+```{r}
+#for significance of the performance
+detailfile=read.csv("detail_testresults_temp.csv") #adjust as needed
+iset=unique(detailfile$i)
+permresult=c()
+pset=c(length=length(iset))
+bset=c(length=length(iset))
+k=1
+for (n in iset){
+  subdetail=subset(detailfile,i==n,select=c(CID,CID_p))
+  diff=subdetail$CID_p-subdetail$CID
+  mystat=EnvStats::oneSamplePermutationTest(diff, n.permutations = 100000)
+  pset[[k]]=mystat$p.value
+  bset[[k]]=mean(diff)>0
+  k=k+1
+}
+pframe=data.frame('rate'=iset/10,'better'=ifelse(bset,'SSM','SSA'),'p-value'=ifelse(pset==0,'<0.00001',pset))
+
+'%>%' = dplyr::'%>%'
+pframe %>%
+  knitr::kable(align='ccc') %>%
+  kableExtra::kable_styling()
+```
+
+```{r}
+#permutation test whether SSM closer to ref or parsimony
+mymatrix10=mymatrix7-mymatrix3
+ppset=c(length=20)
+booset=c(length=20)
+for (i in 1:20){
+  pmystat=EnvStats::oneSamplePermutationTest(mymatrix10[i,], n.permutations = 100000)
+  ppset[[i]]=pmystat$p.value
+  booset[[i]]=(mean(mymatrix10[i,])>0)
+}
+
+ppframe=data.frame('rate'=iset/10, 'closer.to.ref'=ifelse(booset,'true','false'),'p-value'=ifelse(ppset==0,'<0.00001',ppset))
+'%>%' = dplyr::'%>%'
+ppframe %>%
+  knitr::kable(align='ccc') %>%
+  kableExtra::kable_styling()
+```
