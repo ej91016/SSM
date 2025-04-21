@@ -1,0 +1,40 @@
+---
+title: "Example use of ssm.R"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r load-core}
+required_packages <- c("ape", "phytools", "TreeDist", "phangorn",
+                      "processx", "foreach", "doParallel", "Matrix", "readr")
+
+invisible(lapply(required_packages, function(pkg) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)
+  }
+}))
+
+devtools::source_url("https://raw.githubusercontent.com/ej91016/SSM/main/R/ssm.R")
+```
+```{r run-simulation}
+# Run a small test simulation (binary + ternary characters)
+result <- distcal(
+  state_num = c(2, 3),       # Binary (2 states) followed by ternary (3 states)
+  char_num = c(100, 50),     # 100 binary + 50 ternary characters (150 total)
+  rate = 0.5,                # Mutation rate
+  falsespace = NULL,         # No false space analysis
+  ntip = 16,                 # 16 tips in each tree
+  birth = 1.0, death = 0.5,  # Birth/death rates
+  tree_num = 5,              # 5 trees per parameter set
+  set_num = 3,               # 3 matrices per tree
+  mainDir = getwd(),         # Save in current directory
+  parsimony = FALSE,         # No parsimony analysis
+  rthreads = 2,              # 2 threads for RAxML
+  par = 2                    # Run in parallel (total threads = rthreads * par)
+)
+```
+```{r examine-results}
+print(result$distance)
+```
