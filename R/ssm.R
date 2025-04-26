@@ -1,12 +1,14 @@
 required_packages <- c("ape", "phytools", "TreeDist", "phangorn", 
                        "processx", "foreach", "doParallel", "Matrix", "readr")
 
+#check package
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
     stop("Package '", pkg, "' is required but not installed.")
   }
 }
 
+#initate parallel
 clustergen <- function(npar,rpar){
   num_cores = min(npar,parallel::detectCores()%/%rpar - 1)
   print('code will be excuted in parallel')
@@ -16,6 +18,7 @@ clustergen <- function(npar,rpar){
   return(cl)
 }
 
+#generate matrix (single-thread)
 char_gen <-function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
                     falsespace=NULL,char_total,fullDir,parsimony=FALSE){
   for (t in 1:tree_num){
@@ -59,6 +62,7 @@ char_gen <-function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
   }
 }
 
+#generate matrix (multi-thread)
 par_char_gen <- function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
                          falsespace, char_total,fullDir, parsimony,cl) {
   parallel::clusterExport(cl, c("mkQmatrix", "makepaup"))
@@ -111,6 +115,7 @@ par_char_gen <- function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
     })
 }
 
+#setup paup nexus file
 makepaup <- function(fullDir,pt,pi,pnt,pctotal,pst,pmymatrix,pname){
   f2name=paste0('paupsim_',pt,'_',pi,'.nex')
   paupsize=paste0('dimensions ntax=',pnt,' nchar=',pctotal,';')
@@ -136,6 +141,7 @@ mkQmatrix <- function(n=2,rate=1){
   qmatrix=qmatrix*rate
   return(qmatrix)
 }
+
 
 raxml_run <- function(threads, model, mfile, myDir) {
   for (filename in mfile) {
@@ -251,6 +257,7 @@ par_paup_run <- function(mfile,myDir,cl) {
   })
 }
 
+#collect reconstructed tree
 tree_sum <- function(fullDir, tree_num,set_num,parsimony,rate=1){
   sim_tree=ape::read.tree(file.path(fullDir,'sim.trees'))
   for (i in 1:length(sim_tree)){
@@ -281,6 +288,7 @@ tree_sum <- function(fullDir, tree_num,set_num,parsimony,rate=1){
   }
 }
 
+#summarize tree
 comp_sum <- function(fullDir,tree_num,set_num,mysetting,parsimony){
   single=c()
   single_PID=c()
@@ -339,6 +347,7 @@ comp_sum <- function(fullDir,tree_num,set_num,mysetting,parsimony){
   return(dists)
 }
 
+#generate dataframe to store result
 getresult <- function(parsimony=FALSE){
   if(parsimony){
     return(data.frame('RFD'=numeric(),'PID'=numeric(),'CID'=numeric(),
@@ -352,6 +361,7 @@ getresult <- function(parsimony=FALSE){
   }
 }
 
+#compare two distance measurements (only for CID, BSD, and WFD for now)
 compare_file <-function(file_1,file_2,options='CID',adjust=1){
   file1=ape::read.tree(file_1)
   file2=ape::read.tree(file_2)
@@ -392,6 +402,7 @@ compare_file <-function(file_1,file_2,options='CID',adjust=1){
   return(list(mylist,mylist2,mylist3))
 }
 
+#extract results and details from file
 distcal_summary<-function(dm,index,filename,result,detail){
   result[index,]=c(round(colMeans(dm),5),index,basename(filename))
   detail[(1+(index-1)*nrow(dm)):(index*nrow(dm)),1:(ncol(detail)-2)]=round(dm,5)
@@ -400,6 +411,7 @@ distcal_summary<-function(dm,index,filename,result,detail){
   return(list(result=result,detail=detail))
 }
 
+#generate pure birth/birth-death tree
 build_tree<-function(ntip,tree_num,birth,death){
   trees=c()
   while (length(trees)<tree_num){
@@ -415,6 +427,7 @@ build_tree<-function(ntip,tree_num,birth,death){
   return(trees)
 }
 
+#generate partition file
 datasetup<-function(falsespace,state_num,char_num,fullDir){
   if(!is.null(falsespace)){
     state_num_mod=c(state_num,falsespace)
@@ -446,6 +459,8 @@ datasetup<-function(falsespace,state_num,char_num,fullDir){
   }
   return(model_name)
 }
+
+#document the input
 setting<-function(ntip,birth,death,state_num,char_num,falsespace,rate){
   mysetting=paste0('trial_',ntip,'_',round(death/birth,2),'d')
   
@@ -486,11 +501,12 @@ phylo_analysis <- function(par, rthreads, mymodel, fullDir,parsimony,cl) {
   }
 }
 
+#summarize simulations within a directory
 run_summary <- function(mainDir = getwd(), parsimony = FALSE) {
   resultframe <- getresult(parsimony=parsimony)
   detailframe <- getresult(parsimony=parsimony)
   if (Sys.which("fd") != "") {
-    # Use fd if available (faster)
+    # Use fd if available
     rawlist <- processx::run(
       "fd",
       args = c("trial_.*result\\.csv", mainDir, "--type=file"),

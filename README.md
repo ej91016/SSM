@@ -32,34 +32,32 @@ install.packages(c(
 
 ## 🚀 Getting Started
 
-See [`run_example.Rmd`](examples/run_example.Rmd) for example useage with parameter explanations.
+See [`run_example.Rmd`](examples/run_example.Rmd) for example useage with parameter explanations
 
-Example outputs are available in [`run_example_output.zip`](examples/run_example_output.zip).
+Example outputs are available in [`run_example_output.zip`](examples/run_example_output.zip)
 
-To build your own simulation setup, start from the template in [`data_sim.Rmd`](examples/data_sim.Rmd).
+To build your own simulation setup, start from the template in [`data_sim.Rmd`](examples/data_sim.Rmd)
 
 
 ---
 
 ## 📊 Visualization
 
-Example plot functions for comparing results (e.g., `plot_ssmr`, `plot_ssmd`) are provided in [`plot_ssm.Rmd`](examples/plot_ssm.Rmd).
+Example plot functions for comparing results (e.g., `plot_ssmr`, `plot_ssmd`) are provided in [`plot_ssm.Rmd`](examples/plot_ssm.Rmd)
 
 ---
 
 
-## 📄 Citation
+## 📖 Citation
 
-If you use this package, please cite:
+If you use this pipeline, please cite:
 
-> EJ Huang (2025). *SSM: A pipeline for simulating and testing phylogenetic reconstructions with state-space variation*. GitHub. https://github.com/ej91016/SSM
-
-> (Preprint coming soon)
-
+> Huang EJ (2025). *State Space Misspecification in Morphological Phylogenetics: A Pitfall for Models and Parsimony Alike*. 
+bioRxiv. [https://doi.org/10.1101/2025.04.22.650124](https://doi.org/10.1101/2025.04.22.650124)
 
 ---
 
 ## 🪪 License
 
-This project is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html).
+This project is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html)
 
