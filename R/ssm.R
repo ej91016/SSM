@@ -8,7 +8,7 @@ for (pkg in required_packages) {
   }
 }
 
-#initate parallel
+#initiate parallel
 clustergen <- function(npar,rpar){
   num_cores = min(npar,parallel::detectCores()%/%rpar - 1)
   print('code will be excuted in parallel')
@@ -57,6 +57,8 @@ char_gen <-function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
       if (parsimony){
         makepaup(fullDir=fullDir,pt=t,pi=i,pnt=ntip,pctotal=char_total,pst=stnum_mod,
                  pmymatrix=mymatrix, pname=myname)
+        makepaup_ssaw(fullDir=fullDir,pt=t,pi=i,pnt=ntip,pctotal=char_total,pst=stnum_mod,
+                      pmymatrix=mymatrix, pname=myname,state_num = state_num, char_num = char_num)
       }
     }
   }
@@ -65,7 +67,7 @@ char_gen <-function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
 #generate matrix (multi-thread)
 par_char_gen <- function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
                          falsespace, char_total,fullDir, parsimony,cl) {
-  parallel::clusterExport(cl, c("mkQmatrix", "makepaup"))
+  parallel::clusterExport(cl, c("mkQmatrix", "makepaup","makepaup_ssaw"))
   `%dopar%` <- foreach::`%dopar%`
   tryCatch({
     foreach::foreach(t = 1:tree_num, .packages = c("ape", "phytools","Matrix")) %dopar% {
@@ -107,12 +109,14 @@ par_char_gen <- function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
         if (parsimony) {
           makepaup(fullDir=fullDir,pt=t,pi=i,pnt=ntip,pctotal=char_total,
                    pst=stnum_mod,pmymatrix=mymatrix,pname=myname)
+          makepaup_ssaw(fullDir=fullDir,pt=t,pi=i,pnt=ntip,pctotal=char_total,
+                        pst=stnum_mod,pmymatrix=mymatrix,pname=myname,state_num = state_num, char_num = char_num)
         }
       }
     }    
   },error=function(e){
     message("Error in function par_char_gen: ",e)
-    })
+  })
 }
 
 #setup paup nexus file
@@ -130,9 +134,55 @@ makepaup <- function(fullDir,pt,pi,pnt,pctotal,pst,pmymatrix,pname){
               ,quote = FALSE,sep="",append=T)
   cat(c('\n;','end;\n','begin paup;\n\n',pauplog,
         'set warntree=no warnreset=no warnTSave=no increase=auto autoInc=100;',
-        'hsearch reconLimit=20 rearrLimit=10000000 allSwap=yes limitPerRep=yes;',
+        'hsearch reconLimit=20 rearrLimit=100000000 allSwap=yes limitPerRep=yes;',
         'describeTrees 1;',paupsave,'quit;'), file=file.path(fullDir,f2name),sep='\n',append=T)
 }
+
+#ssaweight setup
+makepaup_ssaw <- function(fullDir, pt, pi, pnt, pctotal, pst, pmymatrix, pname,
+                          state_num, char_num) {
+  f2name <- paste0('paupsim_', pt, '_', pi, '_ssaw.nex')
+  paupsize <- paste0('dimensions ntax=', pnt, ' nchar=', pctotal, ';')
+  paupchar <- paste0('FORMAT DATATYPE = STANDARD GAP = - MISSING = ? SYMBOLS = " ',
+                     paste0(0:(pst - 1), collapse = ' '), '";')
+  pauplog <- paste0('log file = paup_', pt, '_', pi, '_ssaw.txt replace;')
+  paupsave <- paste0('contree / format=newick treeFile=', fullDir, '/paup_physim_',
+                     pt, '_', pi, '_ssaw.tre replace;')
+  
+  cat(c('#nexus', 'begin data;', paupsize, paupchar, 'matrix\n'),
+      file = file.path(fullDir, f2name), sep = '\n')
+  write.table(pmymatrix, file = file.path(fullDir, f2name),
+              row.names = pname, col.names = FALSE, quote = FALSE,
+              sep = "", append = TRUE)
+  cat(c('\n;', 'end;\n', 'begin paup;\n\n', pauplog,
+        'set warntree=no warnreset=no warnTSave=no increase=auto autoInc=100;'),
+      file = file.path(fullDir, f2name), sep = '\n', append = TRUE)
+  
+  weights_lines <- character()
+  char_start <- 1
+  for (i in seq_along(state_num)) {
+    weight_val <- round(10 * log(state_num[i]))
+    char_end <- char_start + char_num[i] - 1
+    # Format the character range compactly
+    char_range <- if (char_start == char_end) {
+      as.character(char_start)
+    } else {
+      paste0(char_start, '-', char_end)
+    }
+    weights_lines <- c(weights_lines,
+                       paste0('  WEIGHTS ', weight_val, ': ', char_range, ';'))
+    char_start <- char_end + 1
+  }
+  
+  # Write WEIGHTS to file
+  cat(weights_lines, file = file.path(fullDir, f2name), sep = '\n', append = TRUE)
+  
+  # Write search commands and end
+  cat(c('hsearch reconLimit=20 rearrLimit=100000000 allSwap=yes limitPerRep=yes;',
+        'describeTrees 1;', paupsave, 'quit;'),
+      file = file.path(fullDir, f2name), sep = '\n', append = TRUE)
+}
+
 
 #on average 1 substitution per site
 mkQmatrix <- function(n=2,rate=1){
@@ -258,8 +308,8 @@ par_paup_run <- function(mfile,myDir,cl) {
 }
 
 #collect reconstructed tree
-tree_sum <- function(fullDir, tree_num,set_num,parsimony,rate=1){
-  sim_tree=ape::read.tree(file.path(fullDir,'sim.trees'))
+tree_sum<- function(fullDir, tree_num,set_num,parsimony,rate=1){
+  sim_tree=phytools::as.multiPhylo(ape::read.tree(file.path(fullDir,'sim.trees')))
   for (i in 1:length(sim_tree)){
     sim_tree[[i]]$edge.length=sim_tree[[i]]$edge.length*rate
   }
@@ -271,6 +321,8 @@ tree_sum <- function(fullDir, tree_num,set_num,parsimony,rate=1){
     if (parsimony){
       paup_comp_name=file.path(fullDir,paste0('paup_comp_physim_',j,'.trees'))
       ape::write.tree(sim_tree[j],file=paup_comp_name)
+      paup_comp_name_ssaw=file.path(fullDir,paste0('paup_comp_physim_',j,'_ssaw.trees'))
+      ape::write.tree(sim_tree[j],file=paup_comp_name_ssaw)
     }
     for (i in 1:set_num){
       raxml_name=paste0('RAxML_bestTree.physim_',j,'_',i,'.tre')
@@ -283,10 +335,15 @@ tree_sum <- function(fullDir, tree_num,set_num,parsimony,rate=1){
         paup_name=paste0('paup_physim_',j,'_',i,'.tre')
         paup_temp_string=readr::read_file(file.path(fullDir,paup_name))
         cat(paup_temp_string,file=paup_comp_name,append=TRUE)
+        #ssaw
+        paup_name_ssaw=paste0('paup_physim_',j,'_',i,'_ssaw.tre')
+        paup_temp_string_ssaw=readr::read_file(file.path(fullDir,paup_name_ssaw))
+        cat(paup_temp_string_ssaw,file=paup_comp_name_ssaw,append=TRUE)
       }
     }
   }
 }
+
 
 #summarize tree
 comp_sum <- function(fullDir,tree_num,set_num,mysetting,parsimony){
@@ -300,15 +357,20 @@ comp_sum <- function(fullDir,tree_num,set_num,mysetting,parsimony){
     paup=c()
     paup_PID=c()
     paup_CID=c()
+    paup_ssaw=c()
+    paup_ssaw_PID=c()
+    paup_ssaw_CID=c()
   }
   for (j in 1:tree_num){
     sumtree=paste0('comp_physim_',j,'.trees')
     comptrees=ape::read.tree(file.path(fullDir,sumtree))
     single_RF=TreeDist::RobinsonFoulds(comptrees)
-    single_PIDRF=TreeDist::InfoRobinsonFoulds(comptrees,
-                                    normalize=TreeDist::SplitwiseInfo(comptrees[[1]]))
-    single_CIDRF=TreeDist::ClusteringInfoDist(comptrees,
-                                    normalize=TreeDist::ClusteringEntropy(comptrees[[1]]))
+    single_PIDRF=TreeDist::InfoRobinsonFoulds(
+      comptrees,
+      normalize=TreeDist::SplitwiseInfo(comptrees[[1]]))
+    single_CIDRF=TreeDist::ClusteringInfoDist(
+      comptrees,
+      normalize=TreeDist::ClusteringEntropy(comptrees[[1]]))
     single=append(single,mean(single_RF[1:set_num]))
     single_PID=append(single_PID,mean(single_PIDRF[1:set_num]))
     single_CID=append(single_CID,mean(single_CIDRF[1:set_num]))
@@ -316,10 +378,12 @@ comp_sum <- function(fullDir,tree_num,set_num,mysetting,parsimony){
     part_sumtree=paste0('part_comp_physim_',j,'.trees')
     part_comptrees=ape::read.tree(file.path(fullDir,part_sumtree))
     part_RF=TreeDist::RobinsonFoulds(part_comptrees)
-    part_PIDRF=TreeDist::InfoRobinsonFoulds(part_comptrees,
-                                  normalize=TreeDist::SplitwiseInfo(comptrees[[1]]))
-    part_CIDRF=TreeDist::ClusteringInfoDist(part_comptrees,
-                                  normalize=TreeDist::ClusteringEntropy(comptrees[[1]]))
+    part_PIDRF=TreeDist::InfoRobinsonFoulds(
+      part_comptrees,
+      normalize=TreeDist::SplitwiseInfo(comptrees[[1]]))
+    part_CIDRF=TreeDist::ClusteringInfoDist(
+      part_comptrees,
+      normalize=TreeDist::ClusteringEntropy(comptrees[[1]]))
     part=append(part,mean(part_RF[1:set_num]))
     part_PID=append(part_PID,mean(part_PIDRF[1:set_num]))
     part_CID=append(part_CID,mean(part_CIDRF[1:set_num]))
@@ -328,19 +392,37 @@ comp_sum <- function(fullDir,tree_num,set_num,mysetting,parsimony){
       paup_sumtree=paste0('paup_comp_physim_',j,'.trees')
       paup_comptrees=ape::read.tree(file.path(fullDir,paup_sumtree))
       paup_RF=TreeDist::RobinsonFoulds(paup_comptrees)
-      paup_PIDRF=TreeDist::InfoRobinsonFoulds(paup_comptrees,
-                                    normalize=TreeDist::SplitwiseInfo(comptrees[[1]]))
-      paup_CIDRF=TreeDist::ClusteringInfoDist(paup_comptrees,
-                                    normalize=TreeDist::ClusteringEntropy(comptrees[[1]]))
+      paup_PIDRF=TreeDist::InfoRobinsonFoulds(
+        paup_comptrees,
+        normalize=TreeDist::SplitwiseInfo(comptrees[[1]]))
+      paup_CIDRF=TreeDist::ClusteringInfoDist(
+        paup_comptrees,
+        normalize=TreeDist::ClusteringEntropy(comptrees[[1]]))
       paup=append(paup,mean(paup_RF[1:set_num]))
       paup_PID=append(paup_PID,mean(paup_PIDRF[1:set_num]))
       paup_CID=append(paup_CID,mean(paup_CIDRF[1:set_num]))
-      dists=data.frame('RF'=single,'PID'=single_PID,'CID'=single_CID,
-                       'RF_p'=part,'PID_p'=part_PID,'CID_p'=part_CID,
-                       'RF_pp'=paup,'PID_pp'=paup_PID,'CID_pp'=paup_CID)
+      
+      
+      paup_ssaw_sumtree=paste0('paup_comp_physim_',j,'_ssaw.trees')
+      paup_ssaw_comptrees=ape::read.tree(file.path(fullDir,paup_ssaw_sumtree))
+      paup_ssaw_RF=TreeDist::RobinsonFoulds(paup_ssaw_comptrees)
+      paup_ssaw_PIDRF=TreeDist::InfoRobinsonFoulds(
+        paup_ssaw_comptrees,
+        normalize=TreeDist::SplitwiseInfo(comptrees[[1]]))
+      paup_ssaw_CIDRF=TreeDist::ClusteringInfoDist(
+        paup_ssaw_comptrees,
+        normalize=TreeDist::ClusteringEntropy(comptrees[[1]]))
+      paup_ssaw=append(paup_ssaw,mean(paup_ssaw_RF[1:set_num]))
+      paup_ssaw_PID=append(paup_ssaw_PID,mean(paup_ssaw_PIDRF[1:set_num]))
+      paup_ssaw_CID=append(paup_ssaw_CID,mean(paup_ssaw_CIDRF[1:set_num]))
+      
+      dists=data.frame('RF_SSM'=single,'PID_SSM'=single_PID,'CID_SSM'=single_CID,
+                       'RF_SSA'=part,'PID_SSA'=part_PID,'CID_SSA'=part_CID,
+                       'RF_MP'=paup,'PID_MP'=paup_PID,'CID_MP'=paup_CID,
+                       'RF_SSAMP'=paup_ssaw,'PID_SSAMP'=paup_ssaw_PID,'CID_SSAMP'=paup_ssaw_CID)
     }else{  
-      dists=data.frame('RF'=single,'PID'=single_PID,'CID'=single_CID,
-                       'RF_p'=part,'PID_p'=part_PID,'CID_p'=part_CID)
+      dists=data.frame('RF_SSM'=single,'PID_SSM'=single_PID,'CID_SSM'=single_CID,
+                       'RF_SSA'=part,'PID_SSA'=part_PID,'CID_SSA'=part_CID)
     }
   }
   write.csv(dists,file.path(fullDir,paste0(mysetting,'_result.csv')),row.names = FALSE)
@@ -350,18 +432,19 @@ comp_sum <- function(fullDir,tree_num,set_num,mysetting,parsimony){
 #generate dataframe to store result
 getresult <- function(parsimony=FALSE){
   if(parsimony){
-    return(data.frame('RFD'=numeric(),'PID'=numeric(),'CID'=numeric(),
-                      'RFD_p'=numeric(),'PID_p'=numeric(),'CID_p'=numeric(),
-                      'RFD_pp'=numeric(),'PID_pp'=numeric(),'CID_pp'=numeric(),
+    return(data.frame('RFD_SSM'=numeric(),'PID_SSM'=numeric(),'CID_SSM'=numeric(),
+                      'RFD_SSA'=numeric(),'PID_SSA'=numeric(),'CID_SSA'=numeric(),
+                      'RFD_MP'=numeric(),'PID_MP'=numeric(),'CID_MP'=numeric(),
+                      'RFD_SSAMP'=numeric(),'PID_SSAMP'=numeric(),'CID_SSAMP'=numeric(),
                       'i'=numeric(),'filename'=character()))
   }else{
-    return(data.frame('RFD'=numeric(),'PID'=numeric(),'CID'=numeric(),
-                      'RFD_p'=numeric(),'PID_p'=numeric(),'CID_p'=numeric(),
+    return(data.frame('RFD_SSM'=numeric(),'PID_SSM'=numeric(),'CID_SSM'=numeric(),
+                      'RFD_SSA'=numeric(),'PID_SSA'=numeric(),'CID_SSA'=numeric(),
                       'i'=numeric(),'filename'=character()))
   }
 }
 
-#compare two distance measurements (only for CID, BSD, and WFD for now)
+#compare two distance measurements (only for CID, BSD, and WRFD for now)
 compare_file <-function(file_1,file_2,options='CID',adjust=1){
   file1=ape::read.tree(file_1)
   file2=ape::read.tree(file_2)
@@ -403,25 +486,52 @@ compare_file <-function(file_1,file_2,options='CID',adjust=1){
 }
 
 #extract results and details from file
-distcal_summary<-function(dm,index,filename,result,detail){
-  result[index,]=c(round(colMeans(dm),5),index,basename(filename))
+distcal_summary<-function(dm,index,filename,result,detail,xaxis=index){
+  result[index,]=c(round(colMeans(dm),5),xaxis,basename(filename))
   detail[(1+(index-1)*nrow(dm)):(index*nrow(dm)),1:(ncol(detail)-2)]=round(dm,5)
-  detail$i[(1+(index-1)*nrow(dm)):(index*nrow(dm))]=index
+  detail$i[(1+(index-1)*nrow(dm)):(index*nrow(dm))]=xaxis
   detail$filename[(1+(index-1)*nrow(dm)):(index*nrow(dm))]=basename(filename)
   return(list(result=result,detail=detail))
+}
+
+get_tree<-function(ntip,tree_num,birth,death,fixtree){
+  if (is.null(fixtree)){
+    build_tree(ntip,tree_num,birth,death)
+  }else{
+    tree=ape::read.tree(fixtree)
+    addtree=tree
+    tree=phytools::as.multiPhylo(tree)
+    while(length(tree)<tree_num){
+      tree=c(tree,addtree)
+    }
+    return(tree)
+  }
 }
 
 #generate pure birth/birth-death tree
 build_tree<-function(ntip,tree_num,birth,death){
   trees=c()
-  while (length(trees)<tree_num){
-    tt=phytools::pbtree(b=birth,d=death,n=ntip,scale=1)
-    if (length(tt$tip.label)==ntip){
+  if (death==0){
+    while(length(trees)<tree_num){
+      tt=phytools::pbtree(b=birth,d=0,n=ntip,scale=1)
       if (length(trees)==0){
         trees=phytools::as.multiPhylo(tt)
       }else{
         trees=c(trees,tt)
       }
+    }
+  }else{
+    n <- 2
+    while (length(trees)<tree_num) {
+      tt=(phytools::pbtree(b = birth, d = death, n = n, scale = 1))
+      if (length(tt$tip.label) == ntip) {
+        if (length(trees)==0){
+          trees=phytools::as.multiPhylo(tt)
+        }else{
+          trees=c(trees,tt)
+        }
+      }
+      n <-ifelse(n== ntip, 2, n+1)
     }
   }
   return(trees)
@@ -492,11 +602,15 @@ phylo_analysis <- function(par, rthreads, mymodel, fullDir,parsimony,cl) {
     raxml_run(threads=rthreads,model=mymodel,mfile=raxml_file,myDir=fullDir)
   }
   if (parsimony) {
-    paup_file = list.files(path=fullDir,pattern = 'nex$')
+    paup_file = list.files(path=fullDir,pattern = '.nex$')
+    paup_file = paup_file[!grepl("_ssaw\\.nex$", paup_file)]
+    paup_file_ssaw = list.files(path=fullDir,pattern = 'ssaw.nex$')
     if (par>0) {
       par_paup_run(paup_file,fullDir,cl=cl)
+      par_paup_run(paup_file_ssaw,fullDir,cl=cl) #ssaw
     } else {
       paup_run(paup_file,fullDir)
+      paup_run(paup_file_ssaw,fullDir)
     }
   }
 }
@@ -515,7 +629,7 @@ run_summary <- function(mainDir = getwd(), parsimony = FALSE) {
     )$stdout
     distfile_list <- unlist(strsplit(trimws(rawlist), "\n"))
   } else {
-
+    
     warning("'fd' not found - using list.files(). Install fd for better performance: https://github.com/sharkdp/fd")
     distfile_list <- list.files(
       path = mainDir,
@@ -525,7 +639,7 @@ run_summary <- function(mainDir = getwd(), parsimony = FALSE) {
     )
   }
   
-
+  
   if (length(distfile_list) == 0) {
     stop("No matching files found in: ", mainDir)
   }
@@ -561,19 +675,24 @@ run_summary <- function(mainDir = getwd(), parsimony = FALSE) {
 
 ## ---------------------------------------------------------------------------------------------------------------------------------------------------
 #this function generate one analysis for a set of the parameters
-distcal <- function(state_num, char_num, rate, falsespace = NULL, ntip, birth, death,
-                    tree_num, set_num, mainDir = getwd(), parsimony = FALSE, 
+distcal <- function(state_num, char_num, rate, falsespace = NULL, ntip=NULL, birth=1, death=0,
+                    tree_num=1, set_num=1, mainDir = getwd(), parsimony = FALSE, fixtree= NULL, 
                     rthreads = 1, par = 0) {
+  
   cl <- NULL
   tryCatch({
-
+    if (!is.null(fixtree)){
+      fix=ape::read.tree(fixtree)
+      ntip=ape::Ntip(fix)
+      
+    }
     # Generate trees and setup
     if (par > 0) {cl <- clustergen(npar = par, rpar = rthreads)
     } else {
       cat(rthreads, "threads in use")
     }
     
-    mytrees <- build_tree(ntip = ntip, tree_num = tree_num, birth = birth, death = death)
+    mytrees <- get_tree(ntip = ntip, tree_num = tree_num, birth = birth, death = death, fixtree)
     myspec <- setting(ntip, birth, death, state_num, char_num, falsespace, rate)
     
     output_dir <- file.path(mainDir, myspec[[2]])

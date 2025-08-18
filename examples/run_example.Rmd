@@ -17,6 +17,7 @@ invisible(lapply(required_packages, function(pkg) {
 }))
 
 devtools::source_url("https://raw.githubusercontent.com/ej91016/SSM/main/R/ssm.R")
+devtools::source_url("https://raw.githubusercontent.com/ej91016/SSM/main/R/ssm_plot.R")
 ```
 ```{r run-simulation}
 # Run a small test simulation (binary + ternary characters)
@@ -30,11 +31,15 @@ result <- distcal(
   tree_num = 5,              # 5 trees per parameter set
   set_num = 3,               # 3 matrices per tree
   mainDir = getwd(),         # Save in current directory
-  parsimony = FALSE,         # No parsimony analysis
+  parsimony = TRUE,         # Unweighted and SSA weighted parsimony
   rthreads = 2,              # 2 threads for RAxML
   par = 2                    # Run in parallel (total threads = rthreads * par)
 )
 ```
 ```{r examine-results}
+#:SSM
+#p:SSA
+#pp:unweighted parsimony
+#pps:SSA weighted parsimony
 print(result$distance)
 ```

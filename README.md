@@ -43,7 +43,7 @@ To build your own simulation setup, start from the template in [`data_sim.Rmd`](
 
 ## 📊 Visualization
 
-Example plot functions for comparing results (e.g., `plot_ssmr`, `plot_ssmd`) are provided in [`plot_ssm.Rmd`](examples/plot_ssm.Rmd)
+Example plot functions for comparing results (`plot_ssmr`, `plot_ssmd`) are provided in [`ssm_plot.R`](R/ssm_plot.R)
 
 ---
 
