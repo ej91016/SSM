@@ -47,14 +47,6 @@ Example plot functions for comparing results (`plot_ssmr`, `plot_ssmd`) are prov
 
 ---
 
-
-## 📖 Citation
-
-If you use this pipeline, please cite:
-
-> Huang EJ (2025). *State Space Misspecification in Morphological Phylogenetics: A Pitfall for Models and Parsimony Alike*. 
-bioRxiv. [https://doi.org/10.1101/2025.04.22.650124](https://doi.org/10.1101/2025.04.22.650124)
-
 ---
 
 ## 🪪 License
