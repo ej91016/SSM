@@ -32,7 +32,7 @@ result <- distcal(
   set_num = 3,               # 3 matrices per tree
   mainDir = getwd(),         # Save in current directory
   parsimony = TRUE,          # Unweighted and SSA weighted parsimony
-  realized = FALSE,          # Not overspecified state space (TRUE requires morphoparse installed)
+  realized = FALSE,          # Not underspecified state space (TRUE requires morphoparse installed)
   rthreads = 2,              # 2 threads for RAxML
   par = 2                    # Run in parallel (total threads = rthreads * par)
 )
