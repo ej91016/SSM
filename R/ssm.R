@@ -308,7 +308,7 @@ par_paup_run <- function(mfile,myDir,cl) {
 }
 
 #collect reconstructed tree
-tree_sum<- function(fullDir, tree_num,set_num,parsimony,rate=1){
+tree_sum<- function(fullDir, tree_num,set_num,parsimony,rate=1, realized=realized){
   sim_tree=phytools::as.multiPhylo(ape::read.tree(file.path(fullDir,'sim.trees')))
   for (i in 1:length(sim_tree)){
     sim_tree[[i]]$edge.length=sim_tree[[i]]$edge.length*rate
@@ -325,10 +325,15 @@ tree_sum<- function(fullDir, tree_num,set_num,parsimony,rate=1){
       ape::write.tree(sim_tree[j],file=paup_comp_name_ssaw)
     }
     for (i in 1:set_num){
-      raxml_name=paste0('RAxML_bestTree.physim_',j,'_',i,'.tre')
+      if (!realized){
+        raxml_name=paste0('RAxML_bestTree.physim_',j,'_',i,'.tre')
+        part_raxml_name=paste0('RAxML_bestTree.part_physim_',j,'_',i,'.tre')
+      }else{
+        raxml_name=paste0('RAxML_bestTree.physim_',j,'_',i,'_mparse.tre')
+        part_raxml_name=paste0('RAxML_bestTree.part_physim_',j,'_',i,'_mparse.tre')
+      }
       temp_string=readr::read_file(file.path(fullDir,raxml_name))
       cat(temp_string,file=comp_name,append=TRUE)
-      part_raxml_name=paste0('RAxML_bestTree.part_physim_',j,'_',i,'.tre')
       part_temp_string=readr::read_file(file.path(fullDir,part_raxml_name))
       cat(part_temp_string,file=part_comp_name,append=TRUE)
       if (parsimony){
@@ -416,13 +421,13 @@ comp_sum <- function(fullDir,tree_num,set_num,mysetting,parsimony){
       paup_ssaw_PID=append(paup_ssaw_PID,mean(paup_ssaw_PIDRF[1:set_num]))
       paup_ssaw_CID=append(paup_ssaw_CID,mean(paup_ssaw_CIDRF[1:set_num]))
       
-      dists=data.frame('RF_SSM'=single,'PID_SSM'=single_PID,'CID_SSM'=single_CID,
-                       'RF_SSA'=part,'PID_SSA'=part_PID,'CID_SSA'=part_CID,
-                       'RF_MP'=paup,'PID_MP'=paup_PID,'CID_MP'=paup_CID,
-                       'RF_SSAMP'=paup_ssaw,'PID_SSAMP'=paup_ssaw_PID,'CID_SSAMP'=paup_ssaw_CID)
+      dists=data.frame('RFD_SSM'=single,'PID_SSM'=single_PID,'CID_SSM'=single_CID,
+                       'RFD_SSA'=part,'PID_SSA'=part_PID,'CID_SSA'=part_CID,
+                       'RFD_MP'=paup,'PID_MP'=paup_PID,'CID_MP'=paup_CID,
+                       'RFD_SSAMP'=paup_ssaw,'PID_SSAMP'=paup_ssaw_PID,'CID_SSAMP'=paup_ssaw_CID)
     }else{  
-      dists=data.frame('RF_SSM'=single,'PID_SSM'=single_PID,'CID_SSM'=single_CID,
-                       'RF_SSA'=part,'PID_SSA'=part_PID,'CID_SSA'=part_CID)
+      dists=data.frame('RFD_SSM'=single,'PID_SSM'=single_PID,'CID_SSM'=single_CID,
+                       'RFD_SSA'=part,'PID_SSA'=part_PID,'CID_SSA'=part_CID)
     }
   }
   write.csv(dists,file.path(fullDir,paste0(mysetting,'_result.csv')),row.names = FALSE)
@@ -594,8 +599,12 @@ matrix_gen <- function(par,cl, ...) {
   }
 }
 
-phylo_analysis <- function(par, rthreads, mymodel, fullDir,parsimony,cl) {
-  raxml_file = list.files(path=fullDir,pattern = 'phy$')
+phylo_analysis <- function(par, rthreads, mymodel, fullDir,parsimony,cl,realized) {
+  if(!realized){
+    raxml_file = list.files(path=fullDir,pattern = 'phy$')
+  }else{
+    raxml_file = list.files(path=fullDir,pattern = '_mparse.phy$')
+  }
   if (par>1) {
     par_raxml_run(threads=rthreads,model=mymodel,mfile=raxml_file,myDir=fullDir,cl=cl)
   } else {
@@ -677,7 +686,7 @@ run_summary <- function(mainDir = getwd(), parsimony = FALSE) {
 #this function generate one analysis for a set of the parameters
 distcal <- function(state_num, char_num, rate, falsespace = NULL, ntip=NULL, birth=1, death=0,
                     tree_num=1, set_num=1, mainDir = getwd(), parsimony = FALSE, fixtree= NULL, 
-                    rthreads = 1, par = 0) {
+                    rthreads = 1, par = 0, realized = FALSE, time = FALSE) {
   
   cl <- NULL
   tryCatch({
@@ -694,8 +703,13 @@ distcal <- function(state_num, char_num, rate, falsespace = NULL, ntip=NULL, bir
     
     mytrees <- get_tree(ntip = ntip, tree_num = tree_num, birth = birth, death = death, fixtree)
     myspec <- setting(ntip, birth, death, state_num, char_num, falsespace, rate)
-    
-    output_dir <- file.path(mainDir, myspec[[2]])
+    if (time){
+      timestamp <- gsub("\\.", "", format(Sys.time(), "%Y%m%d_%H%M%OS3"))
+      output_dir <- file.path(mainDir, paste0(myspec[[2]],"_t",timestamp))
+    }else{
+      output_dir <- file.path(mainDir, myspec[[2]])
+    }
+
     if (!dir.exists(output_dir)) {
       dir.create(output_dir, recursive = TRUE)
     } else {
@@ -705,20 +719,39 @@ distcal <- function(state_num, char_num, rate, falsespace = NULL, ntip=NULL, bir
     sim_tree_path <- file.path(output_dir, "sim.trees")
     ape::write.tree(mytrees, file = sim_tree_path)
     
-    # Model setup and analysis
-    mymodel <- datasetup(falsespace, state_num, char_num, output_dir)
+
     
     matrix_gen(tree_num = tree_num, state_num = state_num, set_num = set_num,
                mytrees = mytrees, rate = rate, ntip = ntip, char_num = char_num,
                falsespace = falsespace, char_total = myspec[[1]], 
                fullDir = output_dir, parsimony = parsimony, par = par, cl = cl)
+
+    # Model setup and analysis
+    if (!realized){
+      mymodel <- datasetup(falsespace, state_num, char_num, output_dir)
+      
+    }else{
+      processx::run(
+        "morphoparse",
+        args = c(
+          "-i", list.files(path = output_dir, pattern = "\\.phy$", full.names = TRUE)[1],
+          "-f", 'phylip',
+          "--reorder"
+        ),
+        wd = output_dir,
+        stdout = file.path(output_dir,"morphoparse_check.txt"),
+        stderr = file.path(output_dir,"morphoparse_error.txt")
+      )
+      mymodel <- list.files(path=output_dir,pattern = 'raxml.models$')[1]
+    }
+    
     
     phylo_analysis(par = par, rthreads = rthreads, mymodel = mymodel,
-                   fullDir = output_dir, parsimony = parsimony, cl = cl)
+                   fullDir = output_dir, parsimony = parsimony, cl = cl, realized = realized)
     
     # Process results
     tree_sum(fullDir = output_dir, tree_num = tree_num, set_num = set_num,
-             parsimony = parsimony, rate = rate)
+             parsimony = parsimony, rate = rate, realized = realized)
     
     result <- comp_sum(fullDir = output_dir, tree_num = tree_num, set_num = set_num,
                        mysetting = myspec[[2]], parsimony = parsimony)

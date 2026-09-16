@@ -6,17 +6,31 @@ for (pkg in required_packages) {
   }
 }
 
-plot_ssmr <- function(myresult, distance = "CID", mytitle = "", myrange = c(0, 0),
-                      parsimony = FALSE, xlabel="", show_legend = FALSE) {
-  myresult <- myresult |>
-    dplyr::mutate(dplyr::across(-filename, ~ as.numeric(.)))
+
+plot_ssmr <- function(mydetail = NULL, myresult, distance = "CID", mytitle = "", myrange = c(0, 0),
+                      parsimony = FALSE, xlabel="", show_legend = FALSE, coverage = 0.5) {
+  
+
+  myresult <- myresult |> dplyr::mutate(dplyr::across(-filename, ~ as.numeric(.)))
+  mydetail <- mydetail |> dplyr::mutate(dplyr::across(-filename, ~ as.numeric(.)))
+  lowerbound <- (1-coverage)/2
+  upperbound <- 1-lowerbound
+  
 
   if (myrange[[2]] == 0) {
-    myrange <- minmax(myresult, distance, parsimony)
+    if (!is.null(mydetail)){
+      myrange <- minmax(mydetail, distance, parsimony, coverage = coverage)
+    }else{
+      myrange <- minmax(myresult, distance, parsimony)
+    }
+
   }
+  
   type_order <- c("MP", "SSAMP", "SSA", "SSM")
   legend_order <- c("SSM", "SSA", "MP", "SSAMP")
-  df <- tibble::tibble(i = myresult$i) |>
+  
+
+  df_mean <- tibble::tibble(i = myresult$i) |>
     dplyr::mutate(
       SSM = myresult[[paste0(distance, '_SSM')]],
       SSA = myresult[[paste0(distance, '_SSA')]],
@@ -25,28 +39,47 @@ plot_ssmr <- function(myresult, distance = "CID", mytitle = "", myrange = c(0, 0
     ) |>
     tidyr::pivot_longer(cols = c("SSM", "SSA", "MP", "SSAMP"), names_to = "Type", values_to = "Value") |>
     dplyr::filter(!is.na(.data$Value)) |>
-    dplyr::mutate(Type = factor(Type, levels = type_order)) |>
-    dplyr::arrange(Type)
+    dplyr::mutate(Type = factor(Type, levels = type_order))
   
 
+  df_raw <- tibble::tibble(i = mydetail$i) |>
+    dplyr::mutate(
+      SSM = mydetail[[paste0(distance, '_SSM')]],
+      SSA = mydetail[[paste0(distance, '_SSA')]],
+      MP = if (parsimony) mydetail[[paste0(distance, '_MP')]] else NA,
+      SSAMP = if (parsimony) mydetail[[paste0(distance, '_SSAMP')]] else NA
+    ) |>
+    tidyr::pivot_longer(cols = c("SSM", "SSA", "MP", "SSAMP"), names_to = "Type", values_to = "Value") |>
+    dplyr::filter(!is.na(.data$Value)) |>
+    dplyr::mutate(Type = factor(Type, levels = type_order))
+  
   shape_map <- c(MP = 17, SSAMP = 15, SSA = 16, SSM = 4)
   color_map <- c(MP = "#FFD700", SSAMP = "#007A5B", SSA = "#005F8C", SSM = "#FF1493")
+  
+  present_types <- intersect(legend_order, unique(df_mean$Type))
+  df_mean$Type <- factor(df_mean$Type, levels = present_types)
+  df_raw$Type <- factor(df_raw$Type, levels = present_types)
+  
+  ggplot2::ggplot() +
+    ggplot2::stat_summary(data = df_raw, 
+                          ggplot2::aes(x = i, y = Value, fill = Type, group = Type),
+                          fun.min = function(x) quantile(x, lowerbound, na.rm = TRUE), 
+                          fun.max = function(x) quantile(x, upperbound, na.rm = TRUE), 
+                          geom = "ribbon", alpha = 0.2, color = NA) +
+    
 
-  present_types <- intersect(legend_order, unique(df$Type))
-  df$Type <- factor(df$Type, levels = present_types)
-  
-  
-  ggplot2::ggplot(df, ggplot2::aes(x = i, y = Value, color = Type, shape = Type)) +
-    ggplot2::geom_point(size = 2,stroke=0.7) +
+    ggplot2::geom_point(data = df_mean, 
+                        ggplot2::aes(x = i, y = Value, color = Type, shape = Type),
+                        size = 2, stroke = 0.7) +
+    
+
+    ggplot2::scale_y_continuous(breaks = scales::pretty_breaks(n = 5),
+                                labels = scales::label_number(accuracy = 0.01)) +
+    ggplot2::coord_cartesian(ylim = myrange) + 
+    ggplot2::labs(title = mytitle, y = distance, x = xlabel) +
     ggplot2::scale_shape_manual(values = shape_map[present_types]) +
     ggplot2::scale_color_manual(values = color_map[present_types]) +
-    ggplot2::scale_x_continuous(breaks = scales::pretty_breaks(n = 5)) +
-    ggplot2::scale_y_continuous(
-      limits = myrange,
-      breaks = scales::pretty_breaks(n = 5),
-      labels = scales::label_number(accuracy = 0.01)
-    ) +
-    ggplot2::labs(title = mytitle, y = distance, x = xlabel) +
+    ggplot2::scale_fill_manual(values = color_map[present_types]) +
     ggplot2::theme_minimal() +
     ggplot2::theme(
       panel.border = ggplot2::element_rect(color = "black", fill = NA),
@@ -139,7 +172,7 @@ plot_ssmd <- function(mydetail, myresult, distance = "CID", mytitle = "", myrang
 plot_legend <- function(parsimony = FALSE) {
   library(ggplot2)
   
-  # Dummy data
+
   dummy_df <- data.frame(
     i = 1:4,
     Value = 1:4,
@@ -156,7 +189,7 @@ plot_legend <- function(parsimony = FALSE) {
                      MP      = "#FFD700"
               )
   
-  # Build dummy plot to extract the legend
+
   p <- ggplot(dummy_df, aes(x = i, y = Value, color = Type, shape = Type)) +
     geom_point(size = 3,stroke=0.7) +
     scale_shape_manual(values = shape_map) +
@@ -167,32 +200,24 @@ plot_legend <- function(parsimony = FALSE) {
   cowplot::get_legend(p)
 }
 
-minmax <- function(mydata, distance = 'CID', parsimony = FALSE) {
+minmax <- function(mydata, distance = 'CID', parsimony = FALSE, coverage = 1) {
+  lower_q <- (1 - coverage) / 2
+  upper_q <- 1 - lower_q
+  
+  cols <- c(paste0(distance, '_SSM'), paste0(distance, '_SSA'))
   if (parsimony) {
-    return(c(
-      0.95 * min(
-        as.numeric(mydata[[paste0(distance, '_SSM')]]),
-        as.numeric(mydata[[paste0(distance, '_SSA')]]),
-        as.numeric(mydata[[paste0(distance, '_MP')]]),
-        as.numeric(mydata[[paste0(distance, '_SSAMP')]])
-      ),
-      1.05 * max(
-        as.numeric(mydata[[paste0(distance, '_SSM')]]),
-        as.numeric(mydata[[paste0(distance, '_SSA')]]),
-        as.numeric(mydata[[paste0(distance, '_MP')]]),
-        as.numeric(mydata[[paste0(distance, '_SSAMP')]])
-      )
-    ))
-  } else {
-    return(c(
-      0.95 * min(
-        as.numeric(mydata[[paste0(distance, '_SSM')]]),
-        as.numeric(mydata[[paste0(distance, '_SSA')]])
-      ),
-      1.05 * max(
-        as.numeric(mydata[[paste0(distance, '_SSM')]]),
-        as.numeric(mydata[[paste0(distance, '_SSA')]])
-      )
-    ))
+    cols <- c(cols, paste0(distance, '_MP'), paste0(distance, '_SSAMP'))
   }
+  
+  per_step_bounds <- mydata |>
+    dplyr::group_by(i) |>
+    dplyr::summarise(dplyr::across(dplyr::all_of(cols), 
+                                   list(low = ~quantile(as.numeric(.), lower_q, na.rm=TRUE),
+                                        high = ~quantile(as.numeric(.), upper_q, na.rm=TRUE))))
+  
+
+  global_min <- min(per_step_bounds |> dplyr::select(dplyr::contains("_low")), na.rm = TRUE)
+  global_max <- max(per_step_bounds |> dplyr::select(dplyr::contains("_high")), na.rm = TRUE)
+  
+  return(c(0.95 * global_min, 1.05 * global_max))
 }
