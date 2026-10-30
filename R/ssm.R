@@ -20,7 +20,8 @@ clustergen <- function(npar,rpar){
 
 #generate matrix (single-thread)
 char_gen <-function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
-                    falsespace=NULL,char_total,fullDir,parsimony=FALSE){
+                    falsespace=NULL,char_total,fullDir,parsimony=FALSE,
+                    ssa_unpadded=FALSE){
   for (t in 1:tree_num){
     mytree=mytrees[[t]]
     myname=paste0(mytree$tip.label," ")
@@ -40,9 +41,17 @@ char_gen <-function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
           }
         }
       }
+      # SSA must use the exact same simulated sites, before false-space padding.
+      unpadded_matrix <- mymatrix
       if (!is.null(falsespace)){
         dum=replicate(ntip, 0:(falsespace-1))
         mymatrix=cbind(mymatrix,t(dum))
+      }
+      if (ssa_unpadded) {
+        ssa_fname <- file.path(fullDir,paste0('physim_',t,'_',i,'_ssa.phy'))
+        cat(paste(' ',ntip,' ',ncol(unpadded_matrix),"\n",sep=""), file=ssa_fname)
+        write.table(unpadded_matrix,file=ssa_fname,row.names=myname,
+                    col.names=FALSE,quote=FALSE,sep="",append=TRUE)
       }
       fname=file.path(fullDir,paste0('physim_',t,'_',i,'.phy'))
       title=paste(' ',ntip,' ',char_total,"\n",sep="")
@@ -66,7 +75,8 @@ char_gen <-function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
 
 #generate matrix (multi-thread)
 par_char_gen <- function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
-                         falsespace, char_total,fullDir, parsimony,cl) {
+                         falsespace, char_total,fullDir, parsimony,cl,
+                         ssa_unpadded=FALSE) {
   parallel::clusterExport(cl, c("mkQmatrix", "makepaup","makepaup_ssaw"))
   `%dopar%` <- foreach::`%dopar%`
   tryCatch({
@@ -89,9 +99,17 @@ par_char_gen <- function(tree_num,state_num,set_num,mytrees,rate,ntip,char_num,
             }
           }
         }
+        # Save original characters before padding for the paired SSA alignment.
+        unpadded_matrix <- mymatrix
         if (!is.null(falsespace)) {
           dum <- replicate(ntip, 0:(falsespace - 1))
           mymatrix <- cbind(mymatrix, t(dum))
+        }
+        if (ssa_unpadded) {
+          ssa_fname <- file.path(fullDir,paste0('physim_',t,'_',i,'_ssa.phy'))
+          cat(paste(' ',ntip,' ',ncol(unpadded_matrix),"\n",sep=""), file=ssa_fname)
+          write.table(unpadded_matrix,file=ssa_fname,row.names=myname,
+                      col.names=FALSE,quote=FALSE,sep="",append=TRUE)
         }
         # Write matrix to file
         fname <- file.path(fullDir, paste0('physim_', t, '_', i, '.phy'))
@@ -193,91 +211,54 @@ mkQmatrix <- function(n=2,rate=1){
 }
 
 
-raxml_run <- function(threads, model, mfile, myDir) {
-  for (filename in mfile) {
-    treename <- paste0(tools::file_path_sans_ext(filename), ".tre")
-    # Basic RAxML run
-    processx::run(
-      "raxmlHPC-PTHREADS-SSE3",
-      args = c(
-        "-m", "MULTICAT",
-        "-T", threads,
-        "-K", "MK",
-        "-p", "12345",
-        "-s", file.path(myDir, filename),
-        "-V",
-        "-n", treename
-      ),
-      wd = myDir,
-      stdout = file.path(myDir,"raxmlrun_check.txt"),
-      stderr = file.path(myDir,"raxmlrun_error.txt")
-    )
-    
-    # Partitioned run
-    processx::run(
-      "raxmlHPC-PTHREADS-SSE3",
-      args = c(
-        "-m", "MULTICAT",
-        "-T", threads,
-        "-K", "MK",
-        "-p", "12345",
-        "-s", file.path(myDir, filename),
-        "-V",
-        "-q", model,
-        "-n", paste0("part_", treename)
-      ),
-      wd = myDir,
-      stdout = file.path(myDir,"raxmlrun_check.txt"),
-      stderr = file.path(myDir,"raxmlrun_error.txt")
-    )
+# Analyze one pair of alignments.  The special mode holds the two model files
+# to ONE partition each: SSM = original + padding; SSA = original only.
+# Existing output tree naming is retained for tree_sum().
+raxml_run_one <- function(filename, threads, model, myDir,
+                          ssa_unpadded=FALSE, ssa_model=NULL) {
+  treename <- paste0(tools::file_path_sans_ext(filename), ".tre")
+  common_args <- c("-m", "MULTICAT", "-T", threads, "-K", "MK", "-p", "12345")
+
+  if (ssa_unpadded) {
+    # SSM uses the padded alignment, all in one partition.
+    ssm_args <- c(common_args, "-s", file.path(myDir,filename), "-V",
+                  "-q", model, "-n", treename)
+    # SSA uses the same simulated characters WITHOUT the padding.
+    ssa_file <- sub("\\.phy$", "_ssa.phy", filename)
+    if (!file.exists(file.path(myDir,ssa_file))) {
+      stop("Missing unpadded SSA alignment: ", ssa_file)
+    }
+    ssa_args <- c(common_args, "-s", file.path(myDir,ssa_file), "-V",
+                  "-q", ssa_model, "-n", paste0("part_",treename))
+  } else {
+    # Original behavior: SSM is unpartitioned, SSA uses the partition file.
+    ssm_args <- c(common_args, "-s", file.path(myDir,filename), "-V",
+                  "-n", treename)
+    ssa_args <- c(common_args, "-s", file.path(myDir,filename), "-V",
+                  "-q", model, "-n", paste0("part_",treename))
+  }
+
+  for (args in list(ssm_args, ssa_args)) {
+    processx::run("raxmlHPC-PTHREADS-SSE3", args=args, wd=myDir,
+                  stdout=file.path(myDir,"raxmlrun_check.txt"),
+                  stderr=file.path(myDir,"raxmlrun_error.txt"))
   }
 }
 
-par_raxml_run <- function(threads, model,mfile,myDir,cl) {
-  # Parallel loop using foreach to process each file
+raxml_run <- function(threads, model, mfile, myDir,
+                      ssa_unpadded=FALSE, ssa_model=NULL) {
+  for (filename in mfile) {
+    raxml_run_one(filename, threads, model, myDir, ssa_unpadded, ssa_model)
+  }
+}
+
+par_raxml_run <- function(threads, model, mfile, myDir, cl,
+                          ssa_unpadded=FALSE, ssa_model=NULL) {
   `%dopar%` <- foreach::`%dopar%`
-  tryCatch({
-    foreach::foreach(filename = mfile, .packages = c("processx")) %dopar% {
-      log_file = paste0("log_", basename(filename), ".txt")
-      treename <- paste0(tools::file_path_sans_ext(filename), ".tre")
-      # Basic RAxML run
-      processx::run(
-        "raxmlHPC-PTHREADS-SSE3",
-        args = c(
-          "-m", "MULTICAT",
-          "-T", threads,
-          "-K", "MK",
-          "-p", "12345",
-          "-s", file.path(myDir, filename),
-          "-V",
-          "-n", treename
-        ),
-        wd = myDir,
-        stdout = file.path(myDir,"raxmlrun_check.txt"),
-        stderr = file.path(myDir,"raxmlrun_error.txt")
-      )
-      
-      # Partitioned run
-      processx::run(
-        "raxmlHPC-PTHREADS-SSE3",
-        args = c(
-          "-m", "MULTICAT",
-          "-T", threads,
-          "-K", "MK",
-          "-p", "12345",
-          "-s", file.path(myDir, filename),
-          "-V",
-          "-q", model,
-          "-n", paste0("part_", treename)
-        ),
-        wd = myDir,
-        stdout = file.path(myDir,"raxmlrun_check.txt"),
-        stderr = file.path(myDir,"raxmlrun_error.txt")
-      )
-    }
-  },error=function(e){
-    message("Error in function par_raxml_run: ",e)
-  })
+  foreach::foreach(filename=mfile, .packages="processx",
+                   .export="raxml_run_one") %dopar% {
+    raxml_run_one(filename, threads, model, myDir, ssa_unpadded, ssa_model)
+  }
 }
 
 paup_run <- function(mfile,myDir){
@@ -543,7 +524,19 @@ build_tree<-function(ntip,tree_num,birth,death){
 }
 
 #generate partition file
-datasetup<-function(falsespace,state_num,char_num,fullDir){
+datasetup<-function(falsespace,state_num,char_num,fullDir,
+                      ssa_unpadded=FALSE){
+  if (ssa_unpadded) {
+    # One partition in each treatment, with different alignment lengths.
+    # Use separate files because RAxML requires every column to be assigned.
+    model_ssm <- 'sim_ssm_padded.models'
+    model_ssa <- 'sim_ssa_unpadded.models'
+    cat(paste0('MULTI, ssm=1-',sum(char_num)+falsespace,'\n'),
+        file=file.path(fullDir,model_ssm))
+    cat(paste0('MULTI, ssa=1-',sum(char_num),'\n'),
+        file=file.path(fullDir,model_ssa))
+    return(list(ssm=model_ssm, ssa=model_ssa))
+  }
   if(!is.null(falsespace)){
     state_num_mod=c(state_num,falsespace)
     char_num_mod=c(char_num,falsespace)
@@ -576,7 +569,8 @@ datasetup<-function(falsespace,state_num,char_num,fullDir){
 }
 
 #document the input
-setting<-function(ntip,birth,death,state_num,char_num,falsespace,rate){
+setting<-function(ntip,birth,death,state_num,char_num,falsespace,rate,
+                     ssa_unpadded=FALSE){
   mysetting=paste0('trial_',ntip,'_',round(death/birth,2),'d')
   
   for (i in 1:length(state_num)){
@@ -588,6 +582,7 @@ setting<-function(ntip,birth,death,state_num,char_num,falsespace,rate){
     mysetting=paste0(mysetting,'_f',falsespace)
   }
   mysetting=paste0(mysetting,'_r',rate)
+  if (ssa_unpadded) mysetting <- paste0(mysetting,'_ssaUnpadded')
   return(list(char_total,mysetting))
 }
 
@@ -599,16 +594,30 @@ matrix_gen <- function(par,cl, ...) {
   }
 }
 
-phylo_analysis <- function(par, rthreads, mymodel, fullDir,parsimony,cl,realized) {
-  if(!realized){
-    raxml_file = list.files(path=fullDir,pattern = 'phy$')
-  }else{
-    raxml_file = list.files(path=fullDir,pattern = '_mparse.phy$')
+phylo_analysis <- function(par, rthreads, mymodel, fullDir,parsimony,cl,realized,
+                            ssa_unpadded=FALSE) {
+  if (ssa_unpadded) {
+    # Do not accidentally run the additional *_ssa.phy alignments as SSM.
+    raxml_file <- list.files(path=fullDir,
+                             pattern='^physim_[0-9]+_[0-9]+\\.phy$')
+    ssm_model <- mymodel$ssm
+    ssa_model <- mymodel$ssa
+  } else if (!realized) {
+    raxml_file <- list.files(path=fullDir,pattern='phy$')
+    ssm_model <- mymodel
+    ssa_model <- NULL
+  } else {
+    raxml_file <- list.files(path=fullDir,pattern='_mparse.phy$')
+    ssm_model <- mymodel
+    ssa_model <- NULL
   }
   if (par>1) {
-    par_raxml_run(threads=rthreads,model=mymodel,mfile=raxml_file,myDir=fullDir,cl=cl)
+    par_raxml_run(threads=rthreads,model=ssm_model,mfile=raxml_file,
+                  myDir=fullDir,cl=cl,ssa_unpadded=ssa_unpadded,
+                  ssa_model=ssa_model)
   } else {
-    raxml_run(threads=rthreads,model=mymodel,mfile=raxml_file,myDir=fullDir)
+    raxml_run(threads=rthreads,model=ssm_model,mfile=raxml_file,
+              myDir=fullDir,ssa_unpadded=ssa_unpadded,ssa_model=ssa_model)
   }
   if (parsimony) {
     paup_file = list.files(path=fullDir,pattern = '.nex$')
@@ -616,10 +625,10 @@ phylo_analysis <- function(par, rthreads, mymodel, fullDir,parsimony,cl,realized
     paup_file_ssaw = list.files(path=fullDir,pattern = 'ssaw.nex$')
     if (par>0) {
       par_paup_run(paup_file,fullDir,cl=cl)
-      par_paup_run(paup_file_ssaw,fullDir,cl=cl) #ssaw
+      par_paup_run(paup_file_ssaw,fullDir,cl=cl)
     } else {
       paup_run(paup_file,fullDir)
-      paup_run(paup_file_ssaw,fullDir)
+      paup_run(paup_file_ssaw)
     }
   }
 }
@@ -686,8 +695,25 @@ run_summary <- function(mainDir = getwd(), parsimony = FALSE) {
 #this function generate one analysis for a set of the parameters
 distcal <- function(state_num, char_num, rate, falsespace = NULL, ntip=NULL, birth=1, death=0,
                     tree_num=1, set_num=1, mainDir = getwd(), parsimony = FALSE, fixtree= NULL, 
-                    rthreads = 1, par = 0, realized = FALSE, time = FALSE) {
+                    rthreads = 1, par = 0, realized = FALSE, time = FALSE,
+                    ssa_unpadded = FALSE) {
   
+  # This control experiment requires homogeneous true state spaces, since both
+  # the padded SSM and unpadded SSA treatments are requested as ONE partition.
+  if (ssa_unpadded) {
+    if (is.null(falsespace) || length(falsespace)!=1L ||
+        !is.finite(falsespace) || falsespace<2) {
+      stop('ssa_unpadded=TRUE requires a positive falsespace (at least 2).')
+    }
+    if (realized) stop('ssa_unpadded=TRUE is not compatible with realized=TRUE.')
+    if (length(state_num)!=length(char_num) ||
+        sum(char_num)<=0 || length(unique(state_num[char_num>0]))!=1L) {
+      stop('ssa_unpadded=TRUE requires original characters with one true state-space size.')
+    }
+    if (falsespace < unique(state_num[char_num>0])) {
+      warning('falsespace is smaller than the generating state-space size.')
+    }
+  }
   cl <- NULL
   tryCatch({
     if (!is.null(fixtree)){
@@ -702,7 +728,8 @@ distcal <- function(state_num, char_num, rate, falsespace = NULL, ntip=NULL, bir
     }
     
     mytrees <- get_tree(ntip = ntip, tree_num = tree_num, birth = birth, death = death, fixtree)
-    myspec <- setting(ntip, birth, death, state_num, char_num, falsespace, rate)
+    myspec <- setting(ntip, birth, death, state_num, char_num, falsespace,
+                      rate, ssa_unpadded=ssa_unpadded)
     if (time){
       timestamp <- gsub("\\.", "", format(Sys.time(), "%Y%m%d_%H%M%OS3"))
       output_dir <- file.path(mainDir, paste0(myspec[[2]],"_t",timestamp))
@@ -724,11 +751,13 @@ distcal <- function(state_num, char_num, rate, falsespace = NULL, ntip=NULL, bir
     matrix_gen(tree_num = tree_num, state_num = state_num, set_num = set_num,
                mytrees = mytrees, rate = rate, ntip = ntip, char_num = char_num,
                falsespace = falsespace, char_total = myspec[[1]], 
-               fullDir = output_dir, parsimony = parsimony, par = par, cl = cl)
+               fullDir = output_dir, parsimony = parsimony, par = par, cl = cl,
+               ssa_unpadded = ssa_unpadded)
 
     # Model setup and analysis
     if (!realized){
-      mymodel <- datasetup(falsespace, state_num, char_num, output_dir)
+      mymodel <- datasetup(falsespace, state_num, char_num, output_dir,
+                           ssa_unpadded=ssa_unpadded)
       
     }else{
       processx::run(
@@ -747,7 +776,8 @@ distcal <- function(state_num, char_num, rate, falsespace = NULL, ntip=NULL, bir
     
     
     phylo_analysis(par = par, rthreads = rthreads, mymodel = mymodel,
-                   fullDir = output_dir, parsimony = parsimony, cl = cl, realized = realized)
+                   fullDir = output_dir, parsimony = parsimony, cl = cl,
+                   realized = realized, ssa_unpadded = ssa_unpadded)
     
     # Process results
     tree_sum(fullDir = output_dir, tree_num = tree_num, set_num = set_num,

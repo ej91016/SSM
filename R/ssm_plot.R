@@ -10,9 +10,12 @@ for (pkg in required_packages) {
 plot_ssmr <- function(mydetail = NULL, myresult, distance = "CID", mytitle = "", myrange = c(0, 0),
                       parsimony = FALSE, xlabel="", show_legend = FALSE, coverage = 0.5) {
   
-
+  if (is.null(mydetail)) {
+    mydetail <- myresult[0, , drop = FALSE]
+  }
   myresult <- myresult |> dplyr::mutate(dplyr::across(-filename, ~ as.numeric(.)))
   mydetail <- mydetail |> dplyr::mutate(dplyr::across(-filename, ~ as.numeric(.)))
+
   lowerbound <- (1-coverage)/2
   upperbound <- 1-lowerbound
   
